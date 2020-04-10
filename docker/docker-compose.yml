@@ -23,3 +23,13 @@ grafana_setup:
    container_name: grafana_setup
    links:
      - grafana
+
+postgres:
+  image: 'postgres:12.2'
+  container_name: postgres
+  restart: always
+  ports:
+    - "5432:5432"
+  environment:
+    POSTGRES_PASSWORD: docker
+

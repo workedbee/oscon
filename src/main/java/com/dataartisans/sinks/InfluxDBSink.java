@@ -10,12 +10,11 @@ import org.influxdb.dto.Point;
 
 import java.util.concurrent.TimeUnit;
 
-public class InfluxDBSink<T extends DataPoint<? extends Number>> extends RichSinkFunction<T> {
+import static com.dataartisans.sinks.InfluxDbConstants.*;
 
+public class InfluxDBSink<T extends DataPoint<? extends Number>> extends RichSinkFunction<T> {
   private transient InfluxDB influxDB = null;
-  private static String dataBaseName = "sineWave";
-  private static String fieldName = "value";
-  private String measurement;
+  private final String measurement;
 
   public InfluxDBSink(String measurement){
     this.measurement = measurement;
@@ -24,8 +23,8 @@ public class InfluxDBSink<T extends DataPoint<? extends Number>> extends RichSin
   @Override
   public void open(Configuration parameters) throws Exception {
     super.open(parameters);
-    influxDB = InfluxDBFactory.connect("http://localhost:8086", "admin", "admin");
-    influxDB.createDatabase(dataBaseName);
+    influxDB = InfluxDBFactory.connect(DEFAULT_URL, DEFAULT_LOGIN, DEFAULT_PASSWORD);
+    influxDB.createDatabase(DATABASE_NAME);
     influxDB.enableBatch(2000, 100, TimeUnit.MILLISECONDS);
   }
 
@@ -35,10 +34,10 @@ public class InfluxDBSink<T extends DataPoint<? extends Number>> extends RichSin
   }
 
   @Override
-  public void invoke(T dataPoint, Context context) throws Exception {
+  public void invoke(T dataPoint, Context context) {
     Point.Builder builder = Point.measurement(measurement)
             .time(dataPoint.getTimeStampMs(), TimeUnit.MILLISECONDS)
-            .addField(fieldName, dataPoint.getValue());
+            .addField(FIELD_NAME, dataPoint.getValue());
 
     if(dataPoint instanceof KeyedDataPoint){
       builder.tag("key", ((KeyedDataPoint) dataPoint).getKey());
@@ -46,7 +45,6 @@ public class InfluxDBSink<T extends DataPoint<? extends Number>> extends RichSin
 
     Point p = builder.build();
 
-    influxDB.write(dataBaseName, "autogen", p);
-
+    influxDB.write(DATABASE_NAME, "autogen", p);
   }
 }

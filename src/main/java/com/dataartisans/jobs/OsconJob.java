@@ -1,28 +1,28 @@
 package com.dataartisans.jobs;
 
-import com.dataartisans.data.ControlMessage;
-import com.dataartisans.functions.*;
-import com.dataartisans.sinks.InfluxDBSink;
-import com.dataartisans.sources.TimestampSource;
 import com.dataartisans.data.DataPoint;
 import com.dataartisans.data.KeyedDataPoint;
+import com.dataartisans.factory.DefaultOsconJobFactory;
+import com.dataartisans.factory.OsconJobFactory;
+import com.dataartisans.functions.AssignKeyFunction;
+import com.dataartisans.functions.SawtoothFunction;
+import com.dataartisans.functions.SineWaveFunction;
+import com.dataartisans.functions.SquareWaveFunction;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
-import org.apache.flink.api.java.tuple.Tuple;
-import org.apache.flink.configuration.ConfigConstants;
-import org.apache.flink.configuration.Configuration;
-import org.apache.flink.runtime.state.filesystem.FsStateBackend;
 import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
-import org.apache.flink.streaming.api.datastream.KeyedStream;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
-import org.apache.flink.streaming.api.environment.LocalStreamEnvironment;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.windowing.time.Time;
 
 public class OsconJob {
 
   public static void main(String[] args) throws Exception {
+    mainWithFactory(new DefaultOsconJobFactory());
+  }
+
+  public static void mainWithFactory(OsconJobFactory factory) throws Exception {
 //    Configuration conf = new Configuration();
 //    conf.setBoolean(ConfigConstants.LOCAL_START_WEBSERVER, true);
 //    final StreamExecutionEnvironment env = StreamExecutionEnvironment.createLocalEnvironmentWithWebUI(conf);
@@ -32,14 +32,14 @@ public class OsconJob {
       StreamExecutionEnvironment.getExecutionEnvironment();
 
 //    env.enableCheckpointing(1000);
-//    env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
+    env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
 
     // Simulate some sensor data
-    DataStream<KeyedDataPoint<Double>> sensorStream = generateSensorData(env);
+    DataStream<KeyedDataPoint<Double>> sensorStream = generateSensorData(env, factory);
 
     // Write this sensor stream out to InfluxDB
     sensorStream
-      .addSink(new InfluxDBSink<>("sensors"))
+      .addSink(factory.createSink("sensors"))
       .name("sensors-sink");
 
     // Compute a windowed sum over this data and write that to InfluxDB as well.
@@ -48,7 +48,7 @@ public class OsconJob {
       .timeWindow(Time.seconds(1))
       .sum("value")
       .name("window")
-      .addSink(new InfluxDBSink<>("summedSensors"))
+      .addSink(factory.createSink("summedSensors"))
       .name("summed-sensors-sink");
 
     // add a socket source
@@ -67,8 +67,7 @@ public class OsconJob {
     env.execute("Flink Demo");
   }
 
-  private static DataStream<KeyedDataPoint<Double>> generateSensorData(StreamExecutionEnvironment env) {
-
+  private static DataStream<KeyedDataPoint<Double>> generateSensorData(StreamExecutionEnvironment env, OsconJobFactory factory) {
     // boiler plate for this demo
     env.setRestartStrategy(RestartStrategies.fixedDelayRestart(1000, 1000));
     env.setMaxParallelism(8);
@@ -76,12 +75,9 @@ public class OsconJob {
     env.disableOperatorChaining();
     env.getConfig().setLatencyTrackingInterval(1000);
 
-    final int SLOWDOWN_FACTOR = 1;
-    final int PERIOD_MS = 100;
-
     // Initial data - just timestamped messages
     DataStreamSource<DataPoint<Long>> timestampSource =
-      env.addSource(new TimestampSource(PERIOD_MS, SLOWDOWN_FACTOR), "test data");
+      env.addSource(factory.createSource(), "test data");
 
     // Transform into sawtooth pattern
     SingleOutputStreamOperator<DataPoint<Double>> sawtoothStream = timestampSource

@@ -2,8 +2,6 @@ package com.dataartisans.sources;
 
 import com.dataartisans.data.DataPoint;
 import org.apache.flink.configuration.Configuration;
-import org.apache.flink.metrics.Counter;
-import org.apache.flink.metrics.Meter;
 import org.apache.flink.streaming.api.checkpoint.ListCheckpointed;
 import org.apache.flink.streaming.api.functions.source.RichSourceFunction;
 import org.apache.flink.streaming.api.watermark.Watermark;
@@ -35,13 +33,8 @@ public class TimestampSource extends RichSourceFunction<DataPoint<Long>> impleme
 
   @Override
   public void run(SourceContext<DataPoint<Long>> ctx) throws Exception {
-    while (running) {
-      synchronized (ctx.getCheckpointLock()) {
-        ctx.collectWithTimestamp(new DataPoint<>(currentTimeMs, 0L), currentTimeMs);
-        ctx.emitWatermark(new Watermark(currentTimeMs));
-        currentTimeMs += periodMs;
-      }
-      timeSync();
+    while (isRunning()) {
+      doCycle(ctx);
     }
   }
 
@@ -51,14 +44,28 @@ public class TimestampSource extends RichSourceFunction<DataPoint<Long>> impleme
   }
 
   @Override
-  public List<Long> snapshotState(long checkpointId, long checkpointTimestamp) throws Exception {
+  public List<Long> snapshotState(long checkpointId, long checkpointTimestamp) {
     return Collections.singletonList(currentTimeMs);
   }
 
   @Override
-  public void restoreState(List<Long> state) throws Exception {
+  public void restoreState(List<Long> state) {
     for (Long s : state)
       currentTimeMs = s;
+  }
+
+  public void doCycle(SourceContext<DataPoint<Long>> ctx) throws Exception {
+    synchronized (ctx.getCheckpointLock()) {
+      ctx.collectWithTimestamp(new DataPoint<>(currentTimeMs, 0L), currentTimeMs);
+      ctx.emitWatermark(new Watermark(currentTimeMs));
+      currentTimeMs += periodMs;
+    }
+
+    timeSync();
+  }
+
+  public boolean isRunning() {
+    return running;
   }
 
   private void timeSync() throws InterruptedException {
